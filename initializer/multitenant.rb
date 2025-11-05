@@ -1,3 +1,5 @@
+#!/usr/bin/ruby
+
 # OOD Initializer for Multitenant Apps
 # Author: Sean Anderson (anderss@wfu.edu)
 # Affiliation: HPC Team, Information Systems, Wake Forest University
@@ -15,8 +17,10 @@ class MultiTenant
       # IMPORTANT: to change the encryption key and iv, search for:
       # 'mt_key' and 'mt_iv'
 
-      admin_wckey = 'multitenant'
-      admin_sacct_bin = '/usr/bin/sacct'
+      slurm_bin_path = '/uufs/granite/sys/installdir/slurm/std/bin'
+
+      admin_wckey = 'multitenant-ge-staging'
+      admin_sacct_bin = "#{slurm_bin_path}/sacct"
       admin_sacct_args = [
         '--allocations',
         '--noheader',
@@ -26,10 +30,11 @@ class MultiTenant
         '-a',
         "--wckeys=#{admin_wckey}"
       ]
-      admin_squeue_bin = '/usr/bin/squeue'
+      admin_squeue_bin = "#{slurm_bin_path}/squeue"
       admin_squeue_args = [
         '--noheader',
-        '--format=%i|%1024j',
+        '--format="%i|%1024j"',
+#        '--format=%i|%1024j',
         '-j'
       ]
       admin_cipher = 'aes-256-cbc'
@@ -93,17 +98,19 @@ class MultiTenant
         # also have a very low impact on your Slurm server since it will only
         # query on those specific Slurm Job IDs.
         o_squeue, = Open3.capture3(admin_squeue_bin, *admin_squeue_args, @mt_main.keys.join(','))
-
         # Looping over each line of the squeue output, we now parse out the elements
         # in the job name
         o_squeue.each_line do |a|
           parse_squeue = a.split('|')
-          jobid = parse_squeue[0].to_s.strip      # jobid
+          jobid = parse_squeue[0].to_s.strip.delete_prefix('"')      # jobid
           name_old = parse_squeue[1].to_s.strip   # the old job name, not really used for anything
           name_group = parse_squeue[2].to_s.strip # the name of the permitted POSIX group
-          name_b64 = parse_squeue[3].to_s.strip   # the base64 encoded message string
+          name_b64 = parse_squeue[3].to_s.strip.delete_suffix('"')   # the base64 encoded message string
 
           if current_groups.include? name_group # if user is in MT group, do the rest of the stuff
+            puts jobid
+            puts @mt_main[jobid]
+            puts @mt_main[jobid]['info']
             mt_key_hex = @mt_main[jobid]['info']['mt_key'].unpack1('H*').ljust(64, '0')
             mt_iv_hex = @mt_main[jobid]['info']['mt_iv'].unpack1('H*').ljust(32, '0')
 
@@ -128,6 +135,7 @@ class MultiTenant
               puts "MULTITENANT: There was an error parsing the JSON content: #{e}"
               @mt_main.delete(jobid)
             else
+              puts @mt_main[jobid]
               @mt_main[jobid]['info']['db'] =
                 "#{dataroot}/batch_connect/db/#{@mt_main[jobid]['accounting']['mti']}"
               @mt_main[jobid]['info']['output'] =
@@ -142,6 +150,7 @@ class MultiTenant
               # delete "sensitive" values from hash
               @mt_main[jobid]['info'].delete('mt_key')
               @mt_main[jobid]['info'].delete('mt_iv')
+              puts "end of inmost branch"
             end
 
           else # ELSE if the user is not in the selected MT group
@@ -207,6 +216,7 @@ class MultiTenant
 
       # END begin jobs
     end
+    puts "end of initializer"
     # END self.jobs
   end
 
