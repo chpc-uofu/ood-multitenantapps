@@ -1,0 +1,25 @@
+---
+
+#
+# NOTES:
+#   1. Use this file to specify the application framework for the CHPC Ansible role.
+#
+
+apiVersion: chpc.utah.edu/v1alpha1
+kind: ApplicationFramework
+metadata:
+  name: multitenant
+spec:
+  apps:
+    - name: multitenant-delivery_debug
+      relativePath: 'apps-delivery/multitenant-delivery_debug'
+    - name: multitenant-delivery_default
+      relativePath: 'apps-delivery/multitenant-delivery_default'
+    - name: multitenant-delivery_readfile
+      relativePath: 'apps-delivery/multitenant-delivery_readfile'
+  dashboard:
+    env:
+      - name: MULTITENANT
+        value: "true"
+    initializers:
+      - relativePath: 'initializer/multitenant.rb'
