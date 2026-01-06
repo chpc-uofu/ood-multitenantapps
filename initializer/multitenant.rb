@@ -17,7 +17,7 @@ class MultiTenant
       # IMPORTANT: to change the encryption key and iv, search for:
       # 'mt_key' and 'mt_iv'
 
-      slurm_bin_path = '/uufs/granite/sys/installdir/slurm/std/bin'
+      slurm_bin_path = '/uufs/notchpeak.peaks/sys/installdir/slurm/std/bin'
 
       admin_wckey = 'multitenant-ge-staging'
       admin_sacct_bin = "#{slurm_bin_path}/sacct"
@@ -79,6 +79,7 @@ class MultiTenant
             }
           }
           # END loop over each line of sacct output
+          puts "HONK in sacct checking for MT jobs, found #{jobid} from #{submitter} "
         end
 
         ##########################################################################
@@ -106,11 +107,7 @@ class MultiTenant
           name_old = parse_squeue[1].to_s.strip   # the old job name, not really used for anything
           name_group = parse_squeue[2].to_s.strip # the name of the permitted POSIX group
           name_b64 = parse_squeue[3].to_s.strip.delete_suffix('"')   # the base64 encoded message string
-
           if current_groups.include? name_group # if user is in MT group, do the rest of the stuff
-            puts jobid
-            puts @mt_main[jobid]
-            puts @mt_main[jobid]['info']
             mt_key_hex = @mt_main[jobid]['info']['mt_key'].unpack1('H*').ljust(64, '0')
             mt_iv_hex = @mt_main[jobid]['info']['mt_iv'].unpack1('H*').ljust(32, '0')
 
@@ -135,7 +132,6 @@ class MultiTenant
               puts "MULTITENANT: There was an error parsing the JSON content: #{e}"
               @mt_main.delete(jobid)
             else
-              puts @mt_main[jobid]
               @mt_main[jobid]['info']['db'] =
                 "#{dataroot}/batch_connect/db/#{@mt_main[jobid]['accounting']['mti']}"
               @mt_main[jobid]['info']['output'] =
@@ -150,7 +146,6 @@ class MultiTenant
               # delete "sensitive" values from hash
               @mt_main[jobid]['info'].delete('mt_key')
               @mt_main[jobid]['info'].delete('mt_iv')
-              puts "end of inmost branch"
             end
 
           else # ELSE if the user is not in the selected MT group
@@ -171,14 +166,17 @@ class MultiTenant
         unless @mt_main.empty? # if mt_main is empty, then there are no GOOD jobs
           @mt_main.each do |jobid, payload| # loop over each pair in mt_main hash
             mt_users = payload['accounting']['mtu'].to_s.strip.split(',')
+
+            puts "HONK Delivery method #{payload['accounting']['mtm']}"
+            puts "HONK Current_uID: #{current_uid.to_s} Eligible users for this job: #{mt_users}"
+            puts "Comparison: current_user: #{current_user} compard with services user #{payload}"
             # check to see if we are allowed to have a card AND
             # user in user list AND
             # current user is NOT submitting user
             if payload['accounting']['mtm'] == 'card' &&
-               mt_users.include?(current_uid.to_s) &&
-               !current_user.eql?(payload['user'])
+               mt_users.include?(current_user.to_s) &&
+               !current_user.eql?(payload['info']['user'])
               unless File.exist?(payload['info']['db'].to_s) # check to see if db file does not exist
-
                 mt_db = <<~TEXT
                   {
                   "id":"#{payload['accounting']['mti']}",
@@ -192,16 +190,21 @@ class MultiTenant
                   "completed_at":null
                   }
                 TEXT
-                FileUtils.mkdir_p File.dirname(payload['info']['db'])
-                File.write(payload['info']['db'].to_s, mt_db.strip.gsub("\n", ''))
-                # END if db file exists
+                puts "HONK User is eligible user and not the starting services user, writing file #{payload['info']['db'].to_s}"
+                puts 'HONK file contents: #{mt_db.strip.gsub("\n", '')}'
+                FileUtils.mkdir_p(File.dirname(payload['info']['db']), verbose: true)
+                bytesWritten = File.write(payload['info']['db'].to_s, mt_db.strip.gsub("\n", ''))
+                puts "DB file written, length = #{bytesWritten}"
+                # END if db file exists 
               end
               unless File.directory?(payload['info']['output'].to_s) # checks existence of output directory
-
                 mt_connection = payload['connection'].map { |key, value| "#{key}: #{value}" }.join("\n")
-                FileUtils.mkdir_p payload['info']['output']
+                puts "HONK writing connecction file #{payload['info']['output']}/connection.yml"
+                puts "HONK file contents #{mt_connection}"
+                FileUtils.mkdir_p(payload['info']['output'], verbose: true)
                 File.write("#{payload['info']['output']}/connection.yml", "#{mt_connection}\n")
                 # END if output directory exists
+                puts "Connection file should have been written"
               end
               # END if allowed to have a card AND user NOT in list AND current user NOT submitter
             end
@@ -216,7 +219,6 @@ class MultiTenant
 
       # END begin jobs
     end
-    puts "end of initializer"
     # END self.jobs
   end
 
